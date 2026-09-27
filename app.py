@@ -112,7 +112,7 @@ if prompt_usuario:
     contexto = ""
     fuentes_usadas = []
 
-    for item in fragmentos:
+    for _, item in fragmentos:
         contexto += f"\n[Página {item['pagina']}]\n{item['texto'][:1200]}\n"
         fuentes_usadas.append(f"Página {item['pagina']}")
 
