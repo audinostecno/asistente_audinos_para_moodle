@@ -75,7 +75,10 @@ if not usa_ia:
     st.warning("Falta configurar la API Key de Gemini en los Secrets de Streamlit.")
 
 def buscar_fragmentos(consulta: str, db: list, max_paginas: int = 3) -> list:
-    palabras = [normalizar(p) for p in re.findall(r'\b\w+\b', consulta) if len(p) > 2]
+    # Permitimos palabras de 2 letras (notas) pero ignoramos los conectores comunes
+    ignoradas = {'de', 'el', 'la', 'en', 'un', 'es', 'se', 'lo', 'su', 'al', 'ha', 'tu', 'te', 'que', 'con', 'por', 'una', 'los', 'las'}
+    palabras = [normalizar(p) for p in re.findall(r'\b\w+\b', consulta) if len(p) > 1 and normalizar(p) not in ignoradas]
+    
     resultados = []
     for item in db:
         texto = normalizar(item["texto"])
@@ -105,30 +108,32 @@ if prompt_usuario:
     for _, item in fragmentos:
         contexto += f"\n[Página {item['pagina']}]\n{item['texto'][:1200]}\n"
 
+    # Construimos la memoria del chat (recuerda los últimos 4 mensajes)
+    historial = ""
+    for msg in st.session_state.mensajes[-5:-1]: 
+        rol = "Alumno" if msg["role"] == "user" else "Asistente"
+        historial += f"{rol}: {msg['content']}\n"
+
     with st.chat_message("assistant"):
-        if contexto and usa_ia:
+        # Si encuentra algo en el libro O si hay una charla previa activa, le permitimos pensar
+        if (contexto or historial) and usa_ia:
             prompt_pedagogico = f"""
             Sos el asistente virtual de la cátedra de Educación Musical para alumnos de 1er año de secundaria (12 y 13 años).
             Respondeles siempre de 'vos' con un tono amigable, didáctico, directo y alentador.
-            Tu tarea es responder usando ESTRICTAMENTE la teoría, definiciones y conceptos del siguiente texto extraído del libro de la cátedra.
             
-            REGLA MAESTRA DE DEDUCCIÓN (EJEMPLOS DEL ALUMNO):
-            Los alumnos te van a hacer preguntas de razonamiento o te van a dar ejemplos cotidianos que NO están escritos literalmente en el texto (por ejemplo: "¿Una bomba es un sonido fuerte o grave?", "¿Qué distancia hay entre Mi y Si?", "¿Una puerta que se golpea es sonido o ruido?"). 
-            En estos casos, NO digas que la información no está. Tu deber es APLICAR las definiciones teóricas del texto al ejemplo del alumno. 
-            - Si preguntan por una bomba, usá las definiciones teóricas de intensidad y altura del texto para deducir y explicarle lógicamente por qué es un sonido fuerte y grave.
-            - Si preguntan por intervalos, notas o escalas, usá la regla de grados conjuntos explicada en el texto para calcular la distancia, aunque las notas no sean las del ejemplo original.
-            - Si preguntan por tipos de compases o acentos, usá las definiciones para ayudarlos a clasificar la canción que mencionen.
-            Siempre explicá el "por qué" usando la teoría del libro.
-
-            Explicá los conceptos de forma muy sencilla, paso a paso. Usa párrafos cortos y viñetas para que sea visualmente fácil de leer.
-            Nunca uses lenguaje complejo.
+            REGLA MAESTRA DE DEDUCCIÓN:
+            - Usá ESTRICTAMENTE la teoría del texto del libro. 
+            - Si te dan ejemplos que no están escritos o preguntan distancias entre notas específicas, APLICÁ la lógica teórica del texto para resolverlo (ej: contando grados para intervalos o analizando amplitud para intensidad).
             
-            SOLO si te preguntan por un concepto teórico, histórico o biográfico que NO figura de ninguna manera en la teoría del texto, deciles amablemente que anoten la duda para preguntarle al profe en clase.
+            MEMORIA DE LA CHARLA (Para entender el contexto de la nueva pregunta):
+            {historial}
 
-            TEXTO DEL LIBRO:
+            TEXTO DEL LIBRO ENCONTRADO AHORA:
             {contexto}
 
-            PREGUNTA DEL ALUMNO: {prompt_usuario}
+            NUEVA PREGUNTA DEL ALUMNO: {prompt_usuario}
+            
+            Si la pregunta no tiene NADA que ver con el cuadernillo ni con la charla previa, deciles amablemente que anoten la duda para el profe.
             """
             with st.spinner("🧠 Redactando la explicación..."):
                 try:
