@@ -18,7 +18,7 @@ ARCHIVO_PDF = "libro_audinos.pdf"
 # Configuración de la IA
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    modelo_ia = genai.GenerativeModel('gemini-pro')
+    modelo_ia = genai.GenerativeModel('gemini-1.5-flash')
     usa_ia = True
 except Exception:
     usa_ia = False
