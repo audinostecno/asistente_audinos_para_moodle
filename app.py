@@ -15,7 +15,7 @@ st.set_page_config(
 st.title("🎵 Asistente Pedagógico de Educación Musical")
 st.write("Consulta basada en los cuadernillos y libros oficiales de la cátedra.")
 
-ARCHIVO_PDF = "libros_audinos.pdf"  # Aquí irá tu PDF unificado
+ARCHIVO_PDF = "libro_audinos.pdf"  # Aquí irá tu PDF unificado
 
 # Intentamos cargar librerías de lectura de PDF
 try:
