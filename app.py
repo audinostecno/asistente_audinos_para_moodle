@@ -125,8 +125,8 @@ if prompt_usuario:
                     respuesta = modelo_ia.generate_content(prompt_pedagogico).text
                     st.write(respuesta)
                     st.session_state.mensajes.append({"role": "assistant", "content": respuesta})
-                except Exception as e:
-                    st.error("Ocurrió un error al generar la respuesta. Intentá de nuevo.")
+               except Exception as e:
+                st.error(f"Error exacto de Google: {e}")
         else:
             respuesta_final = "Esa información no está en las páginas del cuadernillo. ¡Anotá la duda y preguntale al profe en la próxima clase!"
             st.write(respuesta_final)
