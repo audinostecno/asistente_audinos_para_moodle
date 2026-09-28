@@ -5,13 +5,19 @@ import google.generativeai as genai
 
 # Configuración inicial de la página
 st.set_page_config(
-    page_title="Asistente de Educación Musical - Audinos",
+    page_title="Asistente de Educación Musical - LAC",
     page_icon="🎵",
     layout="centered",
 )
 
-st.title("🎵 Asistente Pedagógico de Educación Musical")
-st.write("Consulta basada en los cuadernillos y libros oficiales de la cátedra.")
+# Diseño de la cabecera con la imagen y el título
+col1, col2 = st.columns([1, 4])
+with col1:
+    if os.path.exists("juan_cartoon.png"):
+        st.image("juan_cartoon.png", width=120)
+with col2:
+    st.title("🎵 Asistente online para LAC Música")
+    st.write("Consulta basada en los cuadernillos y libros usados en clase.")
 
 ARCHIVO_PDF = "libro_audinos.pdf"
 
@@ -74,8 +80,7 @@ with st.spinner("📖 Indexando los libros de la cátedra..."):
 if not usa_ia:
     st.warning("Falta configurar la API Key de Gemini en los Secrets de Streamlit.")
 
-def buscar_fragmentos(consulta: str, db: list, max_paginas: int = 3) -> list:
-    # Permitimos palabras de 2 letras (notas) pero ignoramos los conectores comunes
+def buscar_fragmentos(consulta: str, db: list, max_paginas: int = 3):
     ignoradas = {'de', 'el', 'la', 'en', 'un', 'es', 'se', 'lo', 'su', 'al', 'ha', 'tu', 'te', 'que', 'con', 'por', 'una', 'los', 'las'}
     palabras = [normalizar(p) for p in re.findall(r'\b\w+\b', consulta) if len(p) > 1 and normalizar(p) not in ignoradas]
     
@@ -108,14 +113,12 @@ if prompt_usuario:
     for _, item in fragmentos:
         contexto += f"\n[Página {item['pagina']}]\n{item['texto'][:1200]}\n"
 
-    # Construimos la memoria del chat (recuerda los últimos 4 mensajes)
     historial = ""
     for msg in st.session_state.mensajes[-5:-1]: 
         rol = "Alumno" if msg["role"] == "user" else "Asistente"
         historial += f"{rol}: {msg['content']}\n"
 
     with st.chat_message("assistant"):
-        # Si encuentra algo en el libro O si hay una charla previa activa, le permitimos pensar
         if (contexto or historial) and usa_ia:
             prompt_pedagogico = f"""
             Sos el asistente virtual de la cátedra de Educación Musical para alumnos de 1er año de secundaria (12 y 13 años).
@@ -133,7 +136,7 @@ if prompt_usuario:
 
             NUEVA PREGUNTA DEL ALUMNO: {prompt_usuario}
             
-            Si la pregunta no tiene NADA que ver con el cuadernillo ni con la charla previa, deciles amablemente que anoten la duda para el profe.
+            Si la pregunta no tiene NADA que ver con el cuadernillo ni con la charla previa, deciles amablemente que anoten la duda para preguntarle al profe Juan.
             """
             with st.spinner("🧠 Redactando la explicación..."):
                 try:
@@ -141,8 +144,11 @@ if prompt_usuario:
                     st.write(respuesta)
                     st.session_state.mensajes.append({"role": "assistant", "content": respuesta})
                 except Exception as e:
-                    st.error(f"Error exacto de Google: {e}")
+                    if "429" in str(e) or "Quota" in str(e):
+                        st.warning("¡Uf! Me están haciendo muchas preguntas al mismo tiempo. Esperen 1 minutito y vuelvan a intentar.")
+                    else:
+                        st.error(f"Error técnico: {e}")
         else:
-            respuesta_final = "Esa información no está en las páginas del cuadernillo. ¡Anotá la duda y preguntale al profe en la próxima clase!"
+            respuesta_final = "Esa información no está en las páginas del cuadernillo. ¡Anotá la duda y preguntale al profe Juan en la próxima clase!"
             st.write(respuesta_final)
             st.session_state.mensajes.append({"role": "assistant", "content": respuesta_final})
