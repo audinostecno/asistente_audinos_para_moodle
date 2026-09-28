@@ -17,17 +17,9 @@ with col1:
         st.image("juan_cartoon.png", width=120)
 with col2:
     st.title("🎵 Asistente online para LAC Música")
-    st.write("Consulta basada en los cuadernillos y libros usados en clase del Profe Juan Tamburelli.")
+    st.write("Consulta basada en los cuadernillos y libros usados en clase.")
 
 ARCHIVO_PDF = "libro_audinos.pdf"
-
-# Configuración de la IA
-try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    modelo_ia = genai.GenerativeModel('gemini-3.8-flash')
-    usa_ia = True
-except Exception:
-    usa_ia = False
 
 try:
     import fitz
@@ -77,9 +69,6 @@ def indexar_libro():
 with st.spinner("📖 Indexando los libros de la cátedra..."):
     base_de_datos, mensaje_estado = indexar_libro()
 
-if not usa_ia:
-    st.warning("Falta configurar la API Key de Gemini en los Secrets de Streamlit.")
-
 def buscar_fragmentos(consulta: str, db: list, max_paginas: int = 3):
     ignoradas = {'de', 'el', 'la', 'en', 'un', 'es', 'se', 'lo', 'su', 'al', 'ha', 'tu', 'te', 'que', 'con', 'por', 'una', 'los', 'las'}
     palabras = [normalizar(p) for p in re.findall(r'\b\w+\b', consulta) if len(p) > 1 and normalizar(p) not in ignoradas]
@@ -119,36 +108,60 @@ if prompt_usuario:
         historial += f"{rol}: {msg['content']}\n"
 
     with st.chat_message("assistant"):
-        if (contexto or historial) and usa_ia:
-            prompt_pedagogico = f"""
-            Sos el asistente virtual de la cátedra de Educación Musical para alumnos de 1er año de secundaria (12 y 13 años).
-            Respondeles siempre de 'vos' con un tono amigable, didáctico, directo y alentador.
-            
-            REGLA MAESTRA DE DEDUCCIÓN:
-            - Usá ESTRICTAMENTE la teoría del texto del libro. 
-            - Si te dan ejemplos que no están escritos o preguntan distancias entre notas específicas, APLICÁ la lógica teórica del texto para resolverlo (ej: contando grados para intervalos o analizando amplitud para intensidad).
-            
-            MEMORIA DE LA CHARLA (Para entender el contexto de la nueva pregunta):
-            {historial}
+        prompt_pedagogico = f"""
+        Sos el asistente virtual de la cátedra de Educación Musical para alumnos de 1er año de secundaria (12 y 13 años).
+        Respondeles siempre de 'vos' con un tono amigable, didáctico, directo y alentador.
+        
+        REGLA MAESTRA DE DEDUCCIÓN:
+        - Usá ESTRICTAMENTE la teoría del texto del libro. 
+        - Si te dan ejemplos que no están escritos o preguntan distancias entre notas específicas, APLICÁ la lógica teórica del texto para resolverlo (ej: contando grados para intervalos o analizando amplitud para intensidad).
+        
+        MEMORIA DE LA CHARLA (Para entender el contexto de la nueva pregunta):
+        {historial}
 
-            TEXTO DEL LIBRO ENCONTRADO AHORA:
-            {contexto}
+        TEXTO DEL LIBRO ENCONTRADO AHORA:
+        {contexto}
 
-            NUEVA PREGUNTA DEL ALUMNO: {prompt_usuario}
+        NUEVA PREGUNTA DEL ALUMNO: {prompt_usuario}
+        
+        Si la pregunta no tiene NADA que ver con el cuadernillo ni con la charla previa, deciles amablemente que anoten la duda para preguntarle al profe Juan.
+        """
+        with st.spinner("🧠 Redactando la explicación..."):
+            # Cargamos de forma segura las tres API keys desde Streamlit Secrets
+            cuentas_keys = [
+                st.secrets.get("GEMINI_API_KEY"),
+                st.secrets.get("GEMINI_API_KEY_2"),
+                st.secrets.get("GEMINI_API_KEY_3")
+            ]
+            modelos_disponibles = ['gemini-2.5-flash', 'gemini-2-flash']
             
-            Si la pregunta no tiene NADA que ver con el cuadernillo ni con la charla previa, deciles amablemente que anoten la duda para preguntarle al profe Juan.
-            """
-            with st.spinner("🧠 Redactando la explicación..."):
+            respuesta = None
+            ultimo_error = None
+
+            for key in cuentas_keys:
+                if not key:
+                    continue
                 try:
-                    respuesta = modelo_ia.generate_content(prompt_pedagogico).text
-                    st.write(respuesta)
-                    st.session_state.mensajes.append({"role": "assistant", "content": respuesta})
+                    genai.configure(api_key=key)
+                    for nombre_modelo in modelos_disponibles:
+                        try:
+                            temp_model = genai.GenerativeModel(nombre_modelo)
+                            respuesta = temp_model.generate_content(prompt_pedagogico).text
+                            break
+                        except Exception as e:
+                            ultimo_error = e
+                            continue
+                    if respuesta:
+                        break
                 except Exception as e:
-                    if "429" in str(e) or "Quota" in str(e):
-                        st.warning("¡Uf! Me están haciendo muchas preguntas al mismo tiempo. Esperen 1 minutito y vuelvan a intentar.")
-                    else:
-                        st.error(f"Error técnico: {e}")
-        else:
-            respuesta_final = "Esa información no está en las páginas del cuadernillo. ¡Anotá la duda y preguntale al profe Juan en la próxima clase!"
-            st.write(respuesta_final)
-            st.session_state.mensajes.append({"role": "assistant", "content": respuesta_final})
+                    ultimo_error = e
+                    continue
+
+            if respuesta:
+                st.write(respuesta)
+                st.session_state.mensajes.append({"role": "assistant", "content": respuesta})
+            else:
+                if "429" in str(ultimo_error) or "Quota" in str(ultimo_error):
+                    st.warning("¡Uf! Me están haciendo demasiadas preguntas hoy en todos los cursos. Esperen 1 minutito y vuelvan a intentar.")
+                else:
+                    st.error(f"Error técnico: {ultimo_error}")
