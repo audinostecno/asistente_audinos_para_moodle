@@ -127,13 +127,13 @@ if prompt_usuario:
         Si la pregunta no tiene NADA que ver con el cuadernillo ni con la charla previa, deciles amablemente que anoten la duda para preguntarle al profe Juan.
         """
         with st.spinner("🧠 Redactando la explicación..."):
-            # Cargamos de forma segura las tres API keys desde Streamlit Secrets
+            # Usamos las tres llaves de respaldo y los nombres de modelos oficiales correctos
             cuentas_keys = [
                 st.secrets.get("GEMINI_API_KEY"),
                 st.secrets.get("GEMINI_API_KEY_2"),
                 st.secrets.get("GEMINI_API_KEY_3")
             ]
-            modelos_disponibles = ['gemini-2.5-flash', 'gemini-2-flash']
+            modelos_disponibles = ['gemini-1.5-flash', 'gemini-1.5-pro']
             
             respuesta = None
             ultimo_error = None
@@ -161,7 +161,7 @@ if prompt_usuario:
                 st.write(respuesta)
                 st.session_state.mensajes.append({"role": "assistant", "content": respuesta})
             else:
-                if "429" in str(ultimo_error) or "Quota" in str(ultimo_error):
+                if ultimo_error and ("429" in str(ultimo_error) or "Quota" in str(ultimo_error)):
                     st.warning("¡Uf! Me están haciendo demasiadas preguntas hoy en todos los cursos. Esperen 1 minutito y vuelvan a intentar.")
                 else:
                     st.error(f"Error técnico: {ultimo_error}")
