@@ -17,7 +17,7 @@ with col1:
         st.image("juan_cartoon.png", width=120)
 with col2:
     st.title("🎵 Asistente online para LAC Música")
-    st.write("Consulta basada en los cuadernillos y libros usados en clase.")
+    st.write("Consulta basada en los cuadernillos y libros usados en clase del Profe Juan Tamburelli.")
 
 ARCHIVO_PDF = "libro_audinos.pdf"
 
