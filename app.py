@@ -127,13 +127,13 @@ if prompt_usuario:
         Si la pregunta no tiene NADA que ver con el cuadernillo ni con la charla previa, deciles amablemente que anoten la duda para preguntarle al profe Juan.
         """
         with st.spinner("🧠 Redactando la explicación..."):
-            # Usamos las tres llaves de respaldo con el modelo oficial vigente gemini-2.0-flash
+            # Usamos tus tres llaves de respaldo con el modelo oficial pedido por Google: gemini-3.8-flash
             cuentas_keys = [
                 st.secrets.get("GEMINI_API_KEY"),
                 st.secrets.get("GEMINI_API_KEY_2"),
                 st.secrets.get("GEMINI_API_KEY_3")
             ]
-            modelos_disponibles = ['gemini-2.0-flash']
+            modelos_disponibles = ['gemini-3.8-flash']
             
             respuesta = None
             ultimo_error = None
