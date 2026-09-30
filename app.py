@@ -92,10 +92,14 @@ for msg in st.session_state.mensajes:
 prompt_usuario = st.chat_input("Hacé una consulta sobre los temas de clase...")
 
 if prompt_usuario:
+    # --- ACÁ ESTÁ EL PRINT PARA ESPIAR LAS PREGUNTAS ---
+    print(f"👀 NUEVA CONSULTA: {prompt_usuario}")
+    
     st.chat_message("user").write(prompt_usuario)
     st.session_state.mensajes.append({"role": "user", "content": prompt_usuario})
 
     with st.spinner("🔍 Buscando en los apuntes..."):
+        # ESTA ES LA LÍNEA QUE FALTABA
         fragmentos = buscar_fragmentos(prompt_usuario, base_de_datos, max_paginas=3)
         
     contexto = ""
@@ -127,12 +131,14 @@ if prompt_usuario:
         Si la pregunta no tiene NADA que ver con el cuadernillo ni con la charla previa, deciles amablemente que anoten la duda para preguntarle al profe Juan.
         """
         with st.spinner("🧠 Redactando la explicación..."):
-            # Usamos tus tres llaves de respaldo con el modelo oficial pedido por Google: gemini-3.8-flash
+            # Usamos tus seis llaves de respaldo con el modelo oficial pedido por Google: gemini-3.8-flash
             cuentas_keys = [
                 st.secrets.get("GEMINI_API_KEY"),
                 st.secrets.get("GEMINI_API_KEY_2"),
                 st.secrets.get("GEMINI_API_KEY_3"),
-                st.secrets.get("GEMINI_API_KEY_4")
+                st.secrets.get("GEMINI_API_KEY_4"),
+                st.secrets.get("GEMINI_API_KEY_5"),
+                st.secrets.get("GEMINI_API_KEY_6")
             ]
             modelos_disponibles = ['gemini-3.8-flash']
             
