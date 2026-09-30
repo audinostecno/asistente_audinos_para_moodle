@@ -3,12 +3,6 @@ import re
 import streamlit as st
 import google.generativeai as genai
 
-try:
-    from openai import OpenAI
-    TIENE_OPENAI = True
-except ImportError:
-    TIENE_OPENAI = False
-
 # Configuración inicial de la página
 st.set_page_config(
     page_title="Asistente de Educación Musical - LAC",
@@ -27,12 +21,24 @@ with col2:
 
 ARCHIVO_PDF = "libro_audinos.pdf"
 
-# En la nube usaremos pypdf por defecto
-from pypdf import PdfReader
+try:
+    import fitz
+    TIENE_FITZ = True
+except ImportError:
+    TIENE_FITZ = False
+
+if not TIENE_FITZ:
+    from pypdf import PdfReader
 
 def extraer_paginas_pdf(ruta: str):
-    lector = PdfReader(ruta)
-    return [(p.extract_text() or "") for p in lector.pages]
+    if TIENE_FITZ:
+        doc = fitz.open(ruta)
+        textos = [pag.get_text() for pag in doc]
+        doc.close()
+        return textos
+    else:
+        lector = PdfReader(ruta)
+        return [(p.extract_text() or "") for p in lector.pages]
 
 def limpiar_texto(texto: str) -> str:
     texto = " ".join(texto.split())
@@ -82,8 +88,6 @@ if "mensajes" not in st.session_state:
 for msg in st.session_state.mensajes:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
-        if "cerebro" in msg:
-            st.caption(f"⚡ Respondido por: {msg['cerebro']}")
 
 prompt_usuario = st.chat_input("Hacé una consulta sobre los temas de clase...")
 
@@ -110,9 +114,9 @@ if prompt_usuario:
         
         REGLA MAESTRA DE DEDUCCIÓN:
         - Usá ESTRICTAMENTE la teoría del texto del libro. 
-        - Si te dan ejemplos que no están escritos o preguntan distancias entre notas específicas, APLICÁ la lógica teórica del texto para resolverlo.
+        - Si te dan ejemplos que no están escritos o preguntan distancias entre notas específicas, APLICÁ la lógica teórica del texto para resolverlo (ej: contando grados para intervalos o analizando amplitud para intensidad).
         
-        MEMORIA DE LA CHARLA:
+        MEMORIA DE LA CHARLA (Para entender el contexto de la nueva pregunta):
         {historial}
 
         TEXTO DEL LIBRO ENCONTRADO AHORA:
@@ -122,60 +126,42 @@ if prompt_usuario:
         
         Si la pregunta no tiene NADA que ver con el cuadernillo ni con la charla previa, deciles amablemente que anoten la duda para preguntarle al profe Juan.
         """
-        
         with st.spinner("🧠 Redactando la explicación..."):
-            
-            # --- LISTA AUTOMÁTICA DE CEREBROS ---
-            # El sistema intentará usar el primero. Si falla, pasa al segundo, y así sucesivamente.
-            lista_cerebros = [
-                {"nombre": "OpenAI (GPT-4o)", "tipo": "openai", "clave": st.secrets.get("OPENAI_API_KEY")},
-                {"nombre": "Gemini (Clave 1)", "tipo": "gemini", "clave": st.secrets.get("GEMINI_API_KEY_1")},
-                {"nombre": "Gemini (Clave 2)", "tipo": "gemini", "clave": st.secrets.get("GEMINI_API_KEY_2")},
-                {"nombre": "Gemini (Clave 3)", "tipo": "gemini", "clave": st.secrets.get("GEMINI_API_KEY_3")},
-                {"nombre": "Gemini (Clave 4)", "tipo": "gemini", "clave": st.secrets.get("GEMINI_API_KEY_4")}
+            # Usamos tus tres llaves de respaldo con el modelo oficial pedido por Google: gemini-3.8-flash
+            cuentas_keys = [
+                st.secrets.get("GEMINI_API_KEY"),
+                st.secrets.get("GEMINI_API_KEY_2"),
+                st.secrets.get("GEMINI_API_KEY_3")
             ]
+            modelos_disponibles = ['gemini-3.8-flash']
             
             respuesta = None
             ultimo_error = None
-            cerebro_exitoso = ""
 
-            for cerebro in lista_cerebros:
-                # Si la clave está vacía o no existe, salta al siguiente cerebro
-                if not cerebro["clave"]:
+            for key in cuentas_keys:
+                if not key:
                     continue
-                
                 try:
-                    if cerebro["tipo"] == "openai":
-                        if not TIENE_OPENAI: continue
-                        client = OpenAI(api_key=cerebro["clave"])
-                        response = client.chat.completions.create(
-                            model="gpt-4o",
-                            messages=[{"role": "user", "content": prompt_pedagogico}]
-                        )
-                        respuesta = response.choices[0].message.content
-                        cerebro_exitoso = cerebro["nombre"]
-                        break # ¡Éxito! Salimos del bucle
-                        
-                    elif cerebro["tipo"] == "gemini":
-                        genai.configure(api_key=cerebro["clave"])
-                        modelo_gemini = genai.GenerativeModel('gemini-1.5-flash')
-                        respuesta = modelo_gemini.generate_content(prompt_pedagogico).text
-                        cerebro_exitoso = cerebro["nombre"]
-                        break # ¡Éxito! Salimos del bucle
-                        
+                    genai.configure(api_key=key)
+                    for nombre_modelo in modelos_disponibles:
+                        try:
+                            temp_model = genai.GenerativeModel(nombre_modelo)
+                            respuesta = temp_model.generate_content(prompt_pedagogico).text
+                            break
+                        except Exception as e:
+                            ultimo_error = e
+                            continue
+                    if respuesta:
+                        break
                 except Exception as e:
-                    # Si este cerebro falla (por ej. falta de saldo), guardamos el error y el bucle sigue con el próximo
                     ultimo_error = e
                     continue
 
-            # --- MOSTRAR EL RESULTADO ---
             if respuesta:
                 st.write(respuesta)
-                st.caption(f"⚡ Respondido por: {cerebro_exitoso}")
-                st.session_state.mensajes.append({
-                    "role": "assistant", 
-                    "content": respuesta,
-                    "cerebro": cerebro_exitoso
-                })
+                st.session_state.mensajes.append({"role": "assistant", "content": respuesta})
             else:
-                st.error("¡Uf! Todos mis cerebros están sobrecargados de tantas consultas. Esperen 1 minutito y vuelvan a intentar.")
+                if ultimo_error and ("429" in str(ultimo_error) or "Quota" in str(ultimo_error)):
+                    st.warning("¡Uf! Me están haciendo demasiadas preguntas hoy en todos los cursos. Esperen 1 minutito y vuelvan a intentar.")
+                else:
+                    st.error(f"Error técnico: {ultimo_error}")
