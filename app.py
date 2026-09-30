@@ -3,13 +3,6 @@ import re
 import streamlit as st
 import google.generativeai as genai
 
-# Intentamos importar OpenAI si está instalado
-try:
-    from openai import OpenAI
-    TIENE_OPENAI = True
-except ImportError:
-    TIENE_OPENAI = False
-
 # Configuración inicial de la página
 st.set_page_config(
     page_title="Asistente de Educación Musical - LAC",
@@ -28,7 +21,6 @@ with col2:
 
 ARCHIVO_PDF = "libro_audinos.pdf"
 
-# RESTAURADO: El bloque original exacto que tenías para leer el PDF y que no tire error
 try:
     import fitz
     TIENE_FITZ = True
@@ -96,9 +88,6 @@ if "mensajes" not in st.session_state:
 for msg in st.session_state.mensajes:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
-        # Un pequeño texto gris para que sepas qué IA respondió (solo informativo)
-        if "cerebro" in msg:
-            st.caption(f"⚡ {msg['cerebro']}")
 
 prompt_usuario = st.chat_input("Hacé una consulta sobre los temas de clase...")
 
@@ -138,65 +127,40 @@ if prompt_usuario:
         Si la pregunta no tiene NADA que ver con el cuadernillo ni con la charla previa, deciles amablemente que anoten la duda para preguntarle al profe Juan.
         """
         with st.spinner("🧠 Redactando la explicación..."):
+            # Usamos tus tres llaves de respaldo con el modelo oficial pedido por Google: gemini-3.8-flash
+            cuentas_keys = [
+                st.secrets.get("GEMINI_API_KEY"),
+                st.secrets.get("GEMINI_API_KEY_2"),
+                st.secrets.get("GEMINI_API_KEY_3"),
+                st.secrets.get("GEMINI_API_KEY_4")
+            ]
+            modelos_disponibles = ['gemini-3.8-flash']
             
             respuesta = None
             ultimo_error = None
-            cerebro_exitoso = ""
 
-            # --- 1. INTENTAMOS PRIMERO CON OPENAI ---
-            clave_openai = st.secrets.get("OPENAI_API_KEY")
-            if TIENE_OPENAI and clave_openai:
+            for key in cuentas_keys:
+                if not key:
+                    continue
                 try:
-                    client = OpenAI(api_key=clave_openai)
-                    response = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[{"role": "user", "content": prompt_pedagogico}]
-                    )
-                    respuesta = response.choices[0].message.content
-                    cerebro_exitoso = "Respondido por: OpenAI"
+                    genai.configure(api_key=key)
+                    for nombre_modelo in modelos_disponibles:
+                        try:
+                            temp_model = genai.GenerativeModel(nombre_modelo)
+                            respuesta = temp_model.generate_content(prompt_pedagogico).text
+                            break
+                        except Exception as e:
+                            ultimo_error = e
+                            continue
+                    if respuesta:
+                        break
                 except Exception as e:
                     ultimo_error = e
+                    continue
 
-            # --- 2. SI OPENAI FALLA, ROTAMOS POR GEMINI EXACTAMENTE COMO LO TENÍAS ---
-            if not respuesta:
-                cuentas_keys = [
-                    st.secrets.get("GEMINI_API_KEY"),
-                    st.secrets.get("GEMINI_API_KEY_2"),
-                    st.secrets.get("GEMINI_API_KEY_3"),
-                    st.secrets.get("GEMINI_API_KEY_4") # Agregamos la 4ta que me pasaste antes
-                ]
-                # Restaurado exactamente a como estaba en tu app
-                modelos_disponibles = ['gemini-3.8-flash']
-                
-                for idx, key in enumerate(cuentas_keys):
-                    if not key:
-                        continue
-                    try:
-                        genai.configure(api_key=key)
-                        for nombre_modelo in modelos_disponibles:
-                            try:
-                                temp_model = genai.GenerativeModel(nombre_modelo)
-                                respuesta = temp_model.generate_content(prompt_pedagogico).text
-                                cerebro_exitoso = f"Respondido por: Gemini (Clave {idx+1})"
-                                break
-                            except Exception as e:
-                                ultimo_error = e
-                                continue
-                        if respuesta:
-                            break
-                    except Exception as e:
-                        ultimo_error = e
-                        continue
-
-            # --- 3. MOSTRAR RESPUESTA O ERROR ---
             if respuesta:
                 st.write(respuesta)
-                st.caption(f"⚡ {cerebro_exitoso}")
-                st.session_state.mensajes.append({
-                    "role": "assistant", 
-                    "content": respuesta,
-                    "cerebro": cerebro_exitoso
-                })
+                st.session_state.mensajes.append({"role": "assistant", "content": respuesta})
             else:
                 if ultimo_error and ("429" in str(ultimo_error) or "Quota" in str(ultimo_error)):
                     st.warning("¡Uf! Me están haciendo demasiadas preguntas hoy en todos los cursos. Esperen 1 minutito y vuelvan a intentar.")
