@@ -3,6 +3,13 @@ import re
 import streamlit as st
 import google.generativeai as genai
 
+# Intentamos importar OpenAI de forma segura para que no rompa si falta en GitHub
+try:
+    from openai import OpenAI
+    TIENE_OPENAI = True
+except ImportError:
+    TIENE_OPENAI = False
+
 # Configuración inicial de la página
 st.set_page_config(
     page_title="Asistente de Educación Musical - LAC",
@@ -21,6 +28,7 @@ with col2:
 
 ARCHIVO_PDF = "libro_audinos.pdf"
 
+# --- LÓGICA DE PDF ORIGINAL INTACTA ---
 try:
     import fitz
     TIENE_FITZ = True
@@ -107,6 +115,7 @@ if prompt_usuario:
         rol = "Alumno" if msg["role"] == "user" else "Asistente"
         historial += f"{rol}: {msg['content']}\n"
 
+    # --- SISTEMA DE ROTACIÓN MULTIMODELO INVISIBLE ---
     with st.chat_message("assistant"):
         prompt_pedagogico = f"""
         Sos el asistente virtual de la cátedra de Educación Musical para alumnos de 1er año de secundaria (12 y 13 años).
@@ -126,36 +135,44 @@ if prompt_usuario:
         
         Si la pregunta no tiene NADA que ver con el cuadernillo ni con la charla previa, deciles amablemente que anoten la duda para preguntarle al profe Juan.
         """
+        
         with st.spinner("🧠 Redactando la explicación..."):
-            # Usamos tus tres llaves de respaldo con el modelo oficial pedido por Google: gemini-3.8-flash
-            cuentas_keys = [
-                st.secrets.get("GEMINI_API_KEY"),
-                st.secrets.get("GEMINI_API_KEY_2"),
-                st.secrets.get("GEMINI_API_KEY_3")
+            
+            # Lista de todas tus claves en orden de prioridad
+            lista_cerebros = [
+                {"tipo": "openai", "clave": st.secrets.get("OPENAI_API_KEY")},
+                {"tipo": "gemini", "clave": st.secrets.get("GEMINI_API_KEY")},
+                {"tipo": "gemini", "clave": st.secrets.get("GEMINI_API_KEY_2")},
+                {"tipo": "gemini", "clave": st.secrets.get("GEMINI_API_KEY_3")},
+                {"tipo": "gemini", "clave": st.secrets.get("GEMINI_API_KEY_4")}
             ]
-            modelos_disponibles = ['gemini-3.8-flash']
             
             respuesta = None
             ultimo_error = None
 
-            for key in cuentas_keys:
-                if not key:
+            for cerebro in lista_cerebros:
+                if not cerebro["clave"]:
                     continue
+                
                 try:
-                    genai.configure(api_key=key)
-                    for nombre_modelo in modelos_disponibles:
-                        try:
-                            temp_model = genai.GenerativeModel(nombre_modelo)
-                            respuesta = temp_model.generate_content(prompt_pedagogico).text
-                            break
-                        except Exception as e:
-                            ultimo_error = e
-                            continue
-                    if respuesta:
-                        break
+                    if cerebro["tipo"] == "openai" and TIENE_OPENAI:
+                        client = OpenAI(api_key=cerebro["clave"])
+                        response = client.chat.completions.create(
+                            model="gpt-4o",
+                            messages=[{"role": "user", "content": prompt_pedagogico}]
+                        )
+                        respuesta = response.choices[0].message.content
+                        break 
+                        
+                    elif cerebro["tipo"] == "gemini":
+                        genai.configure(api_key=cerebro["clave"])
+                        modelo_gemini = genai.GenerativeModel('gemini-1.5-flash')
+                        respuesta = modelo_gemini.generate_content(prompt_pedagogico).text
+                        break 
+                        
                 except Exception as e:
                     ultimo_error = e
-                    continue
+                    continue 
 
             if respuesta:
                 st.write(respuesta)
