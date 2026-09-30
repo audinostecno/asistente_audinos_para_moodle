@@ -2,6 +2,7 @@ import os
 import re
 import streamlit as st
 import google.generativeai as genai
+
 try:
     from openai import OpenAI
     TIENE_OPENAI = True
@@ -15,24 +16,6 @@ st.set_page_config(
     layout="centered",
 )
 
-# --- MENÚ LATERAL PARA ELEGIR EL CEREBRO DE IA ---
-st.sidebar.title("⚙️ Configuración")
-cerebro_elegido = st.sidebar.selectbox(
-    "🧠 Elegir Cerebro / API:",
-    [
-        "OpenAI (GPT-4o)", 
-        "Gemini (Clave 1)", 
-        "Gemini (Clave 2)", 
-        "Gemini (Clave 3)", 
-        "Gemini (Clave 4)"
-    ]
-)
-st.sidebar.markdown("---")
-st.sidebar.caption("💡 *Si una clave de Gemini se queda sin límite de consultas (Quota), podés rotar a otra desde acá.*")
-
-if cerebro_elegido == "OpenAI (GPT-4o)" and not TIENE_OPENAI:
-    st.sidebar.error("⚠️️ Falta instalar OpenAI. Ejecutá: `pip install openai`")
-
 # Diseño de la cabecera con la imagen y el título
 col1, col2 = st.columns([1, 4])
 with col1:
@@ -44,24 +27,12 @@ with col2:
 
 ARCHIVO_PDF = "libro_audinos.pdf"
 
-try:
-    import fitz
-    TIENE_FITZ = True
-except ImportError:
-    TIENE_FITZ = False
-
-if not TIENE_FITZ:
-    from pypdf import PdfReader
+# En la nube usaremos pypdf por defecto
+from pypdf import PdfReader
 
 def extraer_paginas_pdf(ruta: str):
-    if TIENE_FITZ:
-        doc = fitz.open(ruta)
-        textos = [pag.get_text() for pag in doc]
-        doc.close()
-        return textos
-    else:
-        lector = PdfReader(ruta)
-        return [(p.extract_text() or "") for p in lector.pages]
+    lector = PdfReader(ruta)
+    return [(p.extract_text() or "") for p in lector.pages]
 
 def limpiar_texto(texto: str) -> str:
     texto = " ".join(texto.split())
@@ -111,6 +82,8 @@ if "mensajes" not in st.session_state:
 for msg in st.session_state.mensajes:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
+        if "cerebro" in msg:
+            st.caption(f"⚡ Respondido por: {msg['cerebro']}")
 
 prompt_usuario = st.chat_input("Hacé una consulta sobre los temas de clase...")
 
@@ -137,9 +110,9 @@ if prompt_usuario:
         
         REGLA MAESTRA DE DEDUCCIÓN:
         - Usá ESTRICTAMENTE la teoría del texto del libro. 
-        - Si te dan ejemplos que no están escritos o preguntan distancias entre notas específicas, APLICÁ la lógica teórica del texto para resolverlo (ej: contando grados para intervalos o analizando amplitud para intensidad).
+        - Si te dan ejemplos que no están escritos o preguntan distancias entre notas específicas, APLICÁ la lógica teórica del texto para resolverlo.
         
-        MEMORIA DE LA CHARLA (Para entender el contexto de la nueva pregunta):
+        MEMORIA DE LA CHARLA:
         {historial}
 
         TEXTO DEL LIBRO ENCONTRADO AHORA:
@@ -150,49 +123,59 @@ if prompt_usuario:
         Si la pregunta no tiene NADA que ver con el cuadernillo ni con la charla previa, deciles amablemente que anoten la duda para preguntarle al profe Juan.
         """
         
-        with st.spinner(f"🧠 Redactando la explicación usando {cerebro_elegido}..."):
+        with st.spinner("🧠 Redactando la explicación..."):
+            
+            # --- LISTA AUTOMÁTICA DE CEREBROS ---
+            # El sistema intentará usar el primero. Si falla, pasa al segundo, y así sucesivamente.
+            lista_cerebros = [
+                {"nombre": "OpenAI (GPT-4o)", "tipo": "openai", "clave": st.secrets.get("OPENAI_API_KEY")},
+                {"nombre": "Gemini (Clave 1)", "tipo": "gemini", "clave": st.secrets.get("GEMINI_API_KEY_1")},
+                {"nombre": "Gemini (Clave 2)", "tipo": "gemini", "clave": st.secrets.get("GEMINI_API_KEY_2")},
+                {"nombre": "Gemini (Clave 3)", "tipo": "gemini", "clave": st.secrets.get("GEMINI_API_KEY_3")},
+                {"nombre": "Gemini (Clave 4)", "tipo": "gemini", "clave": st.secrets.get("GEMINI_API_KEY_4")}
+            ]
+            
             respuesta = None
             ultimo_error = None
+            cerebro_exitoso = ""
 
-            try:
-                # --- ENRUTAMIENTO HACIA OPENAI ---
-                if cerebro_elegido == "OpenAI (GPT-4o)":
-                    if not TIENE_OPENAI:
-                        st.error("Instalá la librería primero: `pip install openai`")
-                    else:
-                        clave_openai = st.secrets.get("OPENAI_API_KEY")
-                        if not clave_openai:
-                            st.error("Falta configurar 'OPENAI_API_KEY' en secrets.toml")
-                        else:
-                            client = OpenAI(api_key=clave_openai)
-                            response = client.chat.completions.create(
-                                model="gpt-4o",
-                                messages=[{"role": "user", "content": prompt_pedagogico}]
-                            )
-                            respuesta = response.choices[0].message.content
-
-                # --- ENRUTAMIENTO HACIA GEMINI ---
-                else: 
-                    # Detectamos qué número de clave eligió (1, 2, 3 o 4)
-                    num_clave = cerebro_elegido.split(" ")[-1].replace(")", "")
-                    clave_gemini = st.secrets.get(f"GEMINI_API_KEY_{num_clave}")
-                    
-                    if not clave_gemini:
-                        st.error(f"Falta configurar 'GEMINI_API_KEY_{num_clave}' en secrets.toml")
-                    else:
-                        genai.configure(api_key=clave_gemini)
+            for cerebro in lista_cerebros:
+                # Si la clave está vacía o no existe, salta al siguiente cerebro
+                if not cerebro["clave"]:
+                    continue
+                
+                try:
+                    if cerebro["tipo"] == "openai":
+                        if not TIENE_OPENAI: continue
+                        client = OpenAI(api_key=cerebro["clave"])
+                        response = client.chat.completions.create(
+                            model="gpt-4o",
+                            messages=[{"role": "user", "content": prompt_pedagogico}]
+                        )
+                        respuesta = response.choices[0].message.content
+                        cerebro_exitoso = cerebro["nombre"]
+                        break # ¡Éxito! Salimos del bucle
+                        
+                    elif cerebro["tipo"] == "gemini":
+                        genai.configure(api_key=cerebro["clave"])
                         modelo_gemini = genai.GenerativeModel('gemini-1.5-flash')
                         respuesta = modelo_gemini.generate_content(prompt_pedagogico).text
+                        cerebro_exitoso = cerebro["nombre"]
+                        break # ¡Éxito! Salimos del bucle
+                        
+                except Exception as e:
+                    # Si este cerebro falla (por ej. falta de saldo), guardamos el error y el bucle sigue con el próximo
+                    ultimo_error = e
+                    continue
 
-            except Exception as e:
-                ultimo_error = e
-
-            # Procesamiento de errores o escritura de respuesta
+            # --- MOSTRAR EL RESULTADO ---
             if respuesta:
                 st.write(respuesta)
-                st.session_state.mensajes.append({"role": "assistant", "content": respuesta})
+                st.caption(f"⚡ Respondido por: {cerebro_exitoso}")
+                st.session_state.mensajes.append({
+                    "role": "assistant", 
+                    "content": respuesta,
+                    "cerebro": cerebro_exitoso
+                })
             else:
-                if ultimo_error and ("429" in str(ultimo_error) or "Quota" in str(ultimo_error)):
-                    st.warning("¡Uf! Me están haciendo demasiadas preguntas hoy en todos los cursos. Esperen 1 minutito o elegí otra clave de Gemini en el menú izquierdo.")
-                elif ultimo_error:
-                    st.error(f"Error técnico: {ultimo_error}")
+                st.error("¡Uf! Todos mis cerebros están sobrecargados de tantas consultas. Esperen 1 minutito y vuelvan a intentar.")
