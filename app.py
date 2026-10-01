@@ -131,7 +131,6 @@ if prompt_usuario:
         Si la pregunta no tiene NADA que ver con el cuadernillo ni con la charla previa, deciles amablemente que anoten la duda para preguntarle al profe Juan.
         """
         with st.spinner("🧠 Redactando la explicación..."):
-            # Usamos tus seis llaves de respaldo con el modelo oficial pedido por Google: gemini-3.8-flash
             cuentas_keys = [
                 st.secrets.get("GEMINI_API_KEY"),
                 st.secrets.get("GEMINI_API_KEY_2"),
@@ -140,7 +139,23 @@ if prompt_usuario:
                 st.secrets.get("GEMINI_API_KEY_5"),
                 st.secrets.get("GEMINI_API_KEY_6")
             ]
-            modelos_disponibles = ['gemini-3.8-flash']
+            
+            # Lista completa de modelos ordenados para fallback automático
+            modelos_disponibles = [
+                'gemini-3.8-flash',
+                'gemini-3.7-flash',
+                'gemini-3.6-flash',
+                'gemini-3.5-flash',
+                'gemini-3.5-flash-lite',
+                'gemini-3.1-pro',
+                'gemini-3.1-flash-lite',
+                'gemini-3-flash',
+                'gemini-2.5-pro',
+                'gemini-2.5-flash',
+                'gemini-2.5-flash-lite',
+                'gemini-2-flash',
+                'gemini-2-flash-lite'
+            ]
             
             respuesta = None
             ultimo_error = None
@@ -154,6 +169,8 @@ if prompt_usuario:
                         try:
                             temp_model = genai.GenerativeModel(nombre_modelo)
                             respuesta = temp_model.generate_content(prompt_pedagogico).text
+                            # Si querés saber qué modelo específico respondió, descomentá la línea de abajo
+                            # print(f"✅ Respondido exitosamente con: {nombre_modelo}")
                             break
                         except Exception as e:
                             ultimo_error = e
